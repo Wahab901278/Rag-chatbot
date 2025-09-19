@@ -1,0 +1,11 @@
+transformers
+torch
+sentence-transformers
+faiss-cpu
+langchain
+langchain-community
+langchain-huggingface
+streamlit
+numpy
+pandas
+PyPDF2
