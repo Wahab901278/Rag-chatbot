@@ -32,7 +32,7 @@ class DocumentProcessor:
                 logger.warning(f'Unsupported file content')
                 continue
             if text.strip():
-                documnets.append({
+                documents.append({
                     'content':text,
                     'source':filename,
                     'type':'document'
@@ -60,7 +60,7 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Error reading text file {filepath} : {str(e)}")
             return ""
-    def chunk_documents(documents,chunk_size=1000):
+    def chunk_documents(documents,chunk_size=1000,overlap=200):
         try:
             chunks=[]
 
@@ -68,7 +68,7 @@ class DocumentProcessor:
                 text=doc['content']
 
                 source=doc['source']
-                for i in range(0,len(text)):
+                for i in range(0,len(text),chunk_size-overlap):
                     chunk_text=text[i:i+chunk_size]
                     if chunk_text.strip():
                         chunks.append({
@@ -83,3 +83,6 @@ class DocumentProcessor:
         except Exception as e:
             logger.info('Error Creating Chunk')
             return 
+        
+
+

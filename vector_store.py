@@ -49,7 +49,7 @@ class VectorStore:
 
     def search(self,query,k=5): # k represents that it is gonna look for the top k documentsd
         if self.index.ntotal==0:
-            logger.warning("Vector store si empty")
+            logger.warning("Vector store is empty")
 
             return []
 

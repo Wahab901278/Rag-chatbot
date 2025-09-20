@@ -31,7 +31,7 @@ class RAGChatbot:
 
             self.model= AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                torch_dtype=torch.float16
+                torch_dtype=torch.float16,
                 device_map="auto" if device=="cuda" else None,
                 trust_remote_code=True
             )
@@ -107,3 +107,55 @@ class RAGChatbot:
         except Exception as e:
             logger.error(f"Error generating response: str(e)")
             return f"Sorry I encountered an error while generating a response : { str(e)}"
+        
+    def chat(self,query):
+        try:
+            logger.info(f"Processing query: {query}")
+            context=self.retrieve_context(query)
+
+            response=self.generate_response(query,context)
+
+            return {
+                "query": query,
+                "context":context,
+                "response": response,
+                "status":"success"
+            }
+        except Exception as e:
+            logger.error(f'Error in chat: {str(e)}')
+            return {
+                "query": query,
+                "context":"",
+                "response": f"Sorry, I encountered an error : {str(e)}",
+                "status":"error"
+            }
+    def add_document(self,file_path):
+        try:
+            if file_path.endswith('.pdf'):
+                text=self.document_processor.extract_text_from_pdf(file_path)
+            elif file_path.endswith('.txt'):
+                text=self.document_processor.extract_text_from_txt(file_path)
+            else:
+                raise ValueError("Unsupported file format")
+            
+
+            if text.strip():
+                document={
+                    'content':text,
+                    'source': os.path.basename(file_path),
+                    'type': 'document'
+                }
+
+            chunks=self.document_processor.chunk_documents([document])
+
+            self.vector_store.add_documents(chunks)
+
+            logger.info(
+            "Successfully added document : {file_path}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error adding document {file_path}: {str(e)}")
+
+            return False
+
