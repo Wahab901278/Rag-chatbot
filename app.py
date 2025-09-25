@@ -13,7 +13,7 @@ st.set_page_config(
 
 if "chatbot" not in st.session_state:
     st.session_state.chatbot=None
-if "messages" not in st.session_state:  # Changed from "message" to "messages"
+if "messages" not in st.session_state:
     st.session_state.messages=[]
 if "loading" not in st.session_state:
     st.session_state.loading=False
@@ -21,8 +21,8 @@ if "loading" not in st.session_state:
 def initialize_chatbot():
     try:
         with st.spinner("Loading Qwen model and processing documents..."):
-            st.session_state.chatbot = RAGChatbot("Qwen/Qwen3-4B")
-        st.success("Chatbot initialized Successfully")  # Fixed typo: sucess -> success
+            st.session_state.chatbot = RAGChatbot()
+        st.success("Chatbot initialized Successfully")
         return True
     except Exception as e:
         st.error(f"Error Initializing Chatbot : {str(e)}")
@@ -68,10 +68,9 @@ def main():
         st.markdown("---")
 
         if st.button("Clear Conversation"):
-            st.session_state.messages=[]  # Changed from message to messages
+            st.session_state.messages=[]
             st.rerun()
 
-        # Initialize/Reinitialize buttons
         if st.session_state.chatbot is None:
             if st.button("Initialize Chatbot"):
                 if initialize_chatbot():
@@ -82,7 +81,7 @@ def main():
                 st.session_state.chatbot=None
                 st.rerun()
 
-    # Main chat area
+
     if st.session_state.chatbot is None:
         st.info("Click 'Initialize Chatbot' in the sidebar to get started")
         st.markdown("""
@@ -94,26 +93,26 @@ def main():
         """)
         return
 
-    # Display chat messages
+
     for message in st.session_state.messages:
         with st.chat_message(message['role']):
             if message['role']=='assistant' and "context" in message:
                 st.markdown(message['content'])
                 expander=st.expander("Retrieved Context")
                 with expander:
-                    st.write(message['context'])  # Changed from expander.write to st.write
+                    st.write(message['context'])
             else:
                 st.markdown(message['content'])
 
-    # Chat input
+
     if prompt := st.chat_input("Ask a question about your documents..."):
-        # Add user message
+
         st.session_state.messages.append({'role':"user","content":prompt})
 
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate assistant response
+
         with st.chat_message('assistant'):
             with st.spinner("Thinking..."):
                 try:
@@ -122,25 +121,25 @@ def main():
                     if result['status']=='success':
                         st.markdown(result['response'])
 
-                        st.session_state.messages.append({  # Changed from message to messages
+                        st.session_state.messages.append({
                             "role":"assistant",
                             "content":result['response'],
                             "context":result['context']
                         })
                         expander=st.expander("Retrieved Context")
                         with expander:
-                            st.write(result['context'])  # Changed from expander.write to st.write
+                            st.write(result['context'])
                     else:
                         error_message=result['response']
                         st.error(error_message)
-                        st.session_state.messages.append({  # Changed from message to messages
+                        st.session_state.messages.append({
                             "role":"assistant",
                             "content":error_message
                         })
                 except Exception as e:
                     error_msg=f"Sorry, I encountered an error : {str(e)}"
                     st.error(error_msg)
-                    st.session_state.messages.append({  # Changed from message to messages
+                    st.session_state.messages.append({
                         "role":"assistant",
                         "content":error_msg
                     })

@@ -8,35 +8,37 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RAGChatbot:
-    """RAG CHATBOT USING QWEN3-4B-INSTRUCT"""
 
-    def __init__(self,model_name):
-        self.model_name=model_name
-        self.tokenizer=None
-        self.model=None
-        self.vector_store=VectorStore()
-        self.document_processor=DocumentProcessor()
+    def __init__(self, model_name="Qwen/Qwen2-0.5B-Instruct"):
+        self.model_name = model_name
+        self.tokenizer = None
+        self.model = None
+        self.vector_store = VectorStore()
+        self.document_processor = DocumentProcessor()
         self.load_model()
         self.initialize_documents()
     def load_model(self):
         try:
-            logger.info(f"Loading model:{self.model_name}")
+            logger.info(f"Loading model: {self.model_name}")
 
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
                 trust_remote_code=True
             )
-            device= "cuda" if torch.cuda_is_available() else "cpu"
-            logging.info(f'Using Device : {device}')
+            
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logging.info(f'Using Device: {device}')
 
-            self.model= AutoModelForCausalLM.from_pretrained(
+            self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                torch_dtype=torch.float16,
-                device_map="auto" if device=="cuda" else None,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                device_map="auto" if device == "cuda" else None,
                 trust_remote_code=True
             )
-            if device=='cpu':
-                self.model= self.model.to(device)
+            if device == 'cpu':
+                self.model = self.model.to(device)
 
             logger.info('Model Loaded Successfully')
 
@@ -73,40 +75,53 @@ class RAGChatbot:
 
         return "\n".join(context_parts)
     
-    def generate_response(self,query,context):
+    def generate_response(self, query, context):
         try:
-            system_prompt="""
-                            You are a Helpful AI assistant. Use the Provided Context to answer the user's question accurately and comprehensively. If the context doesn't contain relevant information, Say so clearly.                        
-                           """
-            prompt=f"""<|im_start|> system : {system_prompt}<|im_end|>
-                        <|im_start|> user Context: {context}
-                        Question: {query}<|im_end|>
-                        <|im_start|> assistant
-                    """
-            inputs=self.tokenizer(prompt,return_tensors="pt",truncation=True,max_length=2048)
-            device = next(self.model.parameters()).device
 
-            inputs={k: v.to(device)for k, v in inputs.items()}
+            prompt = f"""Context: {context}
+
+Question: {query}
+
+Answer:"""
+            
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
+            device = next(self.model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
             with torch.no_grad():
-                outputs=self.model.generate(
+                outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=512,
-                    temprature=0.7
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    top_p=0.7
                 )
-                full_response=self.tokenizer.decode(outputs[0],skip_special_tokens=True)
+                
 
-                assistant_start=full_response.find("<|im_start|> assistant\n")
+                input_length = inputs['input_ids'].shape[1]
+                response_tokens = outputs[0][input_length:]
+                response = self.tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
+                
 
-                if assistant_start != -1 :
-                    response=full_response[assistant_start + len("<|im_start|> assistant\n"):].strip()
+                if response.startswith("Answer:"):
+                    response = response[7:].strip()
+                
 
-                else:
-                    response= full_response[len(prompt):].strip()
+                if not response or len(response) < 10:
+                    full_response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-                return response
+                    prompt_end = full_response.find("Answer:")
+                    if prompt_end != -1:
+                        response = full_response[prompt_end + 7:].strip()
+                    else:
+                        response = full_response[len(prompt):].strip()
+                
+                return response if response else "I couldn't generate a proper response. Please try rephrasing your question."
+                
         except Exception as e:
-            logger.error(f"Error generating response: str(e)")
-            return f"Sorry I encountered an error while generating a response : { str(e)}"
+            logger.error(f"Error generating response: {str(e)}")
+            return f"Sorry I encountered an error while generating a response: {str(e)}"
         
     def chat(self,query):
         try:
@@ -129,33 +144,36 @@ class RAGChatbot:
                 "response": f"Sorry, I encountered an error : {str(e)}",
                 "status":"error"
             }
-    def add_document(self,file_path):
+    def add_document(self, file_path):
         try:
             if file_path.endswith('.pdf'):
-                text=self.document_processor.extract_text_from_pdf(file_path)
+                text = self.document_processor.extract_text_from_pdf(file_path)
             elif file_path.endswith('.txt'):
-                text=self.document_processor.extract_text_from_txt(file_path)
+                text = self.document_processor.extract_text_from_txt(file_path)
             else:
                 raise ValueError("Unsupported file format")
             
+            if not text.strip():
+                logger.warning(f"No text content found in {file_path}")
+                return False
 
-            if text.strip():
-                document={
-                    'content':text,
-                    'source': os.path.basename(file_path),
-                    'type': 'document'
-                }
+            document = {
+                'content': text,
+                'source': os.path.basename(file_path),
+                'type': 'document'
+            }
 
-            chunks=self.document_processor.chunk_documents([document])
+            chunks = self.document_processor.chunk_documents([document])
+            
+            if not chunks:
+                logger.warning(f"No chunks created from {file_path}")
+                return False
 
             self.vector_store.add_documents(chunks)
-
-            logger.info(
-            "Successfully added document : {file_path}"
-            )
+            logger.info(f"Successfully added document: {file_path}")
             return True
+            
         except Exception as e:
             logger.error(f"Error adding document {file_path}: {str(e)}")
-
             return False
 

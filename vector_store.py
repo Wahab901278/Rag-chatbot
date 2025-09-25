@@ -28,45 +28,64 @@ class VectorStore:
             os.makedirs(self.vector_db_path)
             logger.info(f"Created Vector database directory: {self.vector_db_path}")
 
-    def add_documents(self,documents):
+    def add_documents(self, documents):
         if not documents:
             logger.warning('No Documents to add to Vector Store')
             return
-        texts=[]
-        for doc in documents:
-            texts.append(doc['content'])
-        logger.info('Generating Embeddings....')
+            
+        try:
+            texts = []
+            for doc in documents:
+                texts.append(doc['content'])
+            logger.info('Generating Embeddings....')
 
-        embeddings=self.embedding_model.encode(texts,show_progress_bar=True)
+            embeddings = self.embedding_model.encode(texts, show_progress_bar=True)
+            
+            if hasattr(embeddings, 'numpy'):
+                embeddings = embeddings.numpy()
+            
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            norms = np.where(norms == 0, 1, norms)
+            embeddings = embeddings / norms
 
-        embeddings=embeddings/np.linalg.norm(embeddings, axis=1, keepdims=True)
+            self.index.add(embeddings.astype('float32'))
+            self.documents.extend(documents)
 
-        self.index.add(embeddings.astype('float32'))
+            logger.info(f'Added {len(documents)} documents to vector storage')
+            
+        except Exception as e:
+            logger.error(f"Error adding documents to vector store: {str(e)}")
+            raise
 
-        self.documents.extend(documents) # Metadata storage
-
-        logger.info(f'Added {len(documents)} documents to vector storage')
-
-    def search(self,query,k=5): # k represents that it is gonna look for the top k documentsd
-        if self.index.ntotal==0:
+    def search(self, query, k=5):
+        if self.index.ntotal == 0:
             logger.warning("Vector store is empty")
-
             return []
 
-        query_embedding=self.embedding_model.encode([query])
-        query_embedding=query_embedding/np.linalg.norm(query_embedding, axis=1, keepdims=True)
+        try:
+            query_embedding = self.embedding_model.encode([query])
+            
+            if hasattr(query_embedding, 'numpy'):
+                query_embedding = query_embedding.numpy()
+            
+            norms = np.linalg.norm(query_embedding, axis=1, keepdims=True)
+            norms = np.where(norms == 0, 1, norms)
+            query_embedding = query_embedding / norms
 
-        scores,indices=self.index.search(query_embedding.astype('float32'),k)
+            scores, indices = self.index.search(query_embedding.astype('float32'), k)
 
-        results=[]
-
-        for i, (score,idx) in enumerate(zip(scores[0],indices[0])):
-            if idx < len(self.documents):
-                doc=self.documents[idx].copy()
-                doc['similarity_score']=score
-                doc['rank']=i+1
-                results.append(doc)
-        return results
+            results = []
+            for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
+                if idx < len(self.documents):
+                    doc = self.documents[idx].copy()
+                    doc['similarity_score'] = score
+                    doc['rank'] = i + 1
+                    results.append(doc)
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error searching vector store: {str(e)}")
+            return []
     
 
     def save_index(self):
